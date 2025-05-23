@@ -12,10 +12,12 @@ Therefore, I organize these media messages, and then save them to my portable st
 
 ## Features
 
--   classify images into `thumbnails`, `images` or `original_images` folders
--   append file extension to file name
--   prefix a meaningful name to chat room folder(ID) after extracting mappings of chat room ID and name provided BY YOU
--   compare chat room list with the older one
+1.  Classify images into `thumbnails`, `images` or `original_images` folders
+2.  Append file extension to file name
+3.  Prefix a meaningful name to chat room folder(ID) after extracting mappings of chat room ID and name provided BY YOU
+4.  Compare chat room list with the older one
+5.  Know approximately video message IDs through thumbnail names of video and 
+    other types messages in assigned or all (default) chat rooms
 
 
 
@@ -37,25 +39,33 @@ pipenv install
 ## Usage
 
 ```
-usage: main.py [-h] [-e {1,2}] -d CHATS_DIR [-l chatroom.csv] [-d0 CHATS_DIR]
+usage: main.py [-h] [-e {1,2,3}] -d CHATS_DIR [-l chatroom.csv]
+               [-d0 CHATS_DIR] [-i [ROOM_ID [ROOM_ID ...]]]
 
 LINE Chat Backup Helper
 -----------------------------------------------
-  * classify images into `thumbnails`, `images` or `original_images` folders
-  * append file extension to file name
-  * prefix a meaningful name to chat room folder(ID) after extracting mappings of chat room ID and name provided BY YOU
-  * compare chat room list with the older one
+1.  Classify images into `thumbnails`, `images` or `original_images` folders
+2.  Append file extension to file name
+3.  Prefix a meaningful name to chat room folder(ID) after extracting mappings of chat room ID and name provided BY YOU
+4.  Compare chat room list with the older one
+5.  Know approximately video message IDs through thumbnail names of video and
+    other types messages in assigned or all (default) chat rooms
 
 optional arguments:
   -h, --help            show this help message and exit
-  -e {1,2}, --execution {1,2}
-                        ONLY (1) extract mappings or (2) prefix name
+  -e {1,2,3}, --execution {1,2,3}
+                        ONLY (1) extract mappings (2) prefix name (3) know message IDs
   -d CHATS_DIR, --chats-dir CHATS_DIR
                         your backup directory path of `/sdcard/Android/data/jp.naver.line.android/files/chats`
   -l chatroom.csv, --chatroom-db chatroom.csv
                         The CSV file saves the mappings of chat room ID and name provided BY YOU.
   -d0 CHATS_DIR, --old-chats-dir CHATS_DIR
                         compare chat rooms in the `--chats-dir` folder with the older one
+  -i [ROOM_ID [ROOM_ID ...]], --know-message-ids [ROOM_ID [ROOM_ID ...]]
+                        Know approximately video message IDs through thumbnail names of video and
+                         other types messages in assigned or all (default) chat rooms.
+                        These thumbnails are put in the `_MessageIDs` folder beside `chats` and
+                         categorized by chat room.
 ```
 
 
@@ -75,11 +85,17 @@ pipenv run main.py -e 2
     -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
     -l ./chatroom.csv
 
-# Feature 1, 2, 3(ONLY prefix) and 4
+# Feature 5
+pipenv run main.py -e 3 
+    -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
+    -i c3337f8e15f2f1d79f69fd2b0575476b6 u111f36cae69bfd641933b23eee717b54
+
+# Feature 1, 2, 3(ONLY prefix), 4 and 5
 pipenv run main.py 
     -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
     -l ./chatroom.csv 
     -d0 "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20230914_2137\files\chats"
+    -i
 ```
 
 
@@ -119,7 +135,7 @@ Input:
         |-- 111666
         |-- 111666.thumb
     |-- u111f36cae69bfd641933b23eee717b54/messages/
-        |-- voice_11111.aac
+        |-- voice_11110.aac
 ```
 
 
@@ -156,7 +172,7 @@ Output:
         |-- images/
         |-- original_images/
         |-- thumbnails/
-        |-- voice_11111.aac
+        |-- voice_11110.aac
 ```
 
 
@@ -258,14 +274,75 @@ Output:
 
 
 
-### Example: Feature 1, 2, 3(ONLY prefix) and 4
+### Example: Feature 5
 
 ```
-# Feature 1, 2, 3(ONLY prefix) and 4
+# Feature 5
+pipenv run main.py -e 3 
+    -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
+    -i c3337f8e15f2f1d79f69fd2b0575476b6 u111f36cae69bfd641933b23eee717b54
+```
+
+Input:
+```
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats/
+    |-- 家有兩寶-c3337f8e15f2f1d79f69fd2b0575476b6/messages/
+        |-- images/
+            |-- 8552.jpg
+            |-- 10000.jpg
+            |-- 11111.jpg
+        |-- original_images/
+            |-- 8552.original.gif
+            |-- 10000.original.jpg
+            |-- 11111.original.png
+        |-- thumbnails/
+            |-- 8552.thumb.jpg
+            |-- 10000.thumb.jpg
+            |-- 11111.thumb.jpg
+            |-- 50001.thumb.jpg
+            |-- 50002.thumb.jpg
+        |-- 22222
+        |-- 22706.tmp
+        |-- 29139.thumb.tmp.jpg
+        |-- 31674.mp4
+        |-- 33333.pdf
+        |-- 44444.zip
+        |-- voice_38490.aac
+    |-- 被退出-旅行團-c7acf23b06ad3e4c029dc5ef6d6e88444/messages/
+        |-- images/
+            |-- 111666.jpg
+        |-- original_images/
+        |-- thumbnails/
+            |-- 50003.thumb.jpg
+            |-- 111666.thumb.jpg
+    |-- u111f36cae69bfd641933b23eee717b54/messages/
+        |-- images/
+        |-- original_images/
+        |-- thumbnails/
+        |-- voice_11110.aac
+```
+
+
+Output:
+```
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\_MessageIDs/
+    |-- 家有兩寶-c3337f8e15f2f1d79f69fd2b0575476b6/
+        |-- 50001.thumb.jpg
+        |-- 50002.thumb.jpg
+    |-- u111f36cae69bfd641933b23eee717b54/
+```
+
+
+
+### Example: Feature 1, 2, 3(ONLY prefix), 4 and 5
+
+```
+# Feature 1, 2, 3(ONLY prefix), 4 and 5
 pipenv run main.py 
     -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
     -l ./chatroom.csv 
     -d0 "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20230914_2137\files\chats"
+    -i
 ```
 
 
@@ -288,14 +365,17 @@ Input:
         |-- 31674
         |-- 33333
         |-- 44444
+        |-- 50001.thumb
+        |-- 50002.thumb
         |-- voice_38490.aac
     |-- c7acf23b06ad3e4c029dc5ef6d6e88444/messages/
+        |-- 50003.thumb
         |-- 111666
         |-- 111666.thumb
     |-- u111f36cae69bfd641933b23eee717b54/messages/
-        |-- voice_11111.aac
+        |-- voice_11110.aac
     |-- u222f36cae69bfd641933b23eee717b54/messages/
-        |-- voice_22222.aac
+        |-- voice_22220.aac
 
 
 |-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20230914_2137\files\chats/
@@ -330,6 +410,8 @@ Output:
             |-- 8552.thumb.jpg
             |-- 10000.thumb.jpg
             |-- 11111.thumb.jpg
+            |-- 50001.thumb.jpg
+            |-- 50002.thumb.jpg
         |-- 22222               <-- CANNOT guess file type
         |-- 22706.tmp           <-- CANNOT guess file type
         |-- 29139.thumb.tmp.jpg
@@ -342,17 +424,28 @@ Output:
             |-- 111666.jpg
         |-- original_images/
         |-- thumbnails/
+            |-- 50003.thumb.jpg
             |-- 111666.thumb.jpg
     |-- u111f36cae69bfd641933b23eee717b54/messages/
         |-- images/
         |-- original_images/
         |-- thumbnails/
-        |-- voice_11111.aac
+        |-- voice_11110.aac
     |-- u222f36cae69bfd641933b23eee717b54/messages/
         |-- images/
         |-- original_images/
         |-- thumbnails/
-        |-- voice_22222.aac
+        |-- voice_22220.aac
+
+
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\_MessageIDs/
+    |-- 家有兩寶-c3337f8e15f2f1d79f69fd2b0575476b6/
+        |-- 50001.thumb.jpg
+        |-- 50002.thumb.jpg
+    |-- 被退出-旅行團-c7acf23b06ad3e4c029dc5ef6d6e88444/
+        |-- 50003.thumb.jpg
+    |-- u111f36cae69bfd641933b23eee717b54/
+    |-- u222f36cae69bfd641933b23eee717b54/
 ```
 
 
@@ -371,7 +464,7 @@ new chat room in `--chats-dir`
 
 
 
-## back up LINE chats data in Android App-specific folder on external storage
+## Back up LINE chats data in Android App-specific folder on external storage
 
 -   `/sdcard/Android/data/jp.naver.line.android/files/chats`
 -   install [AirDroid](https://play.google.com/store/apps/details?id=com.sand.airdroid)

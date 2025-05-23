@@ -3,6 +3,7 @@ import csv
 import logging
 import os
 import re
+import shutil
 import sys
 from enum import IntEnum, unique
 
@@ -21,6 +22,15 @@ logging.basicConfig(level=logging.DEBUG,
                     format=LOGGING_FORMAT)
 
 CHATROOM_FIELD_NAMES = ["ID", "Name", "Status"]
+
+CHAT_MSG_DIR_NAME = "messages"
+CHAT_MSG_THUMBNAIL_DIR_NAME = "thumbnails"
+CHAT_MSG_IMAGE_DIR_NAME = "images"
+CHAT_MSG_THUMBNAIL_POSTFIX = ".thumb"
+CHAT_MSG_THUMBNAIL_EXT = "jpg"
+CHAT_MSG_IMAGE_EXT = "jpg"
+
+KNOWING_MSG_IDS_ROOT_DIR_NAME = "_MessageIDs"
 
 
 class DataPrintable:
@@ -142,6 +152,38 @@ def gen_chatroom_dir_name(chatroom: ChatroomRecord):
         return f"{status_text}-{chatroom.name}-{chatroom.id}"
     else:
         return f"{chatroom.name}-{chatroom.id}"
+
+
+def gen_chat_msg_dir_path(chats_dir_path, chat_dir_name):
+    return f"{chats_dir_path}/{chat_dir_name}/{CHAT_MSG_DIR_NAME}"
+
+
+def gen_chat_msg_thumbnail_dir_path(msg_dir_path):
+    return f"{msg_dir_path}/{CHAT_MSG_THUMBNAIL_DIR_NAME}"
+
+
+def gen_chat_msg_image_dir_path(msg_dir_path):
+    return f"{msg_dir_path}/{CHAT_MSG_IMAGE_DIR_NAME}"
+
+
+def gen_chat_msg_thumbnail_name(msg_id):
+    return f"{msg_id}{CHAT_MSG_THUMBNAIL_POSTFIX}.{CHAT_MSG_THUMBNAIL_EXT}"
+
+
+def get_chat_msg_id_from_chat_msg_thumbnail_name(fn):
+    return fn.replace(f"{CHAT_MSG_THUMBNAIL_POSTFIX}.{CHAT_MSG_THUMBNAIL_EXT}", "")
+
+
+def get_chat_msg_id_from_chat_msg_image_name(fn):
+    return fn.replace(f".{CHAT_MSG_IMAGE_EXT}", "")
+
+
+def gen_knowing_msg_ids_root_dir_path(chats_dir_path):
+    return f"{chats_dir_path}/../{KNOWING_MSG_IDS_ROOT_DIR_NAME}"
+
+
+def gen_knowing_msg_ids_chatroom_dir_path(msg_ids_dir_path, chat_dir_name):
+    return f"{msg_ids_dir_path}/{chat_dir_name}"
 
 
 def extract_chatroom_id_name_mappings(chats_dir_path, output_path):
@@ -384,37 +426,94 @@ def correct_images_file_extension(chats_dir_path):
         correct_file_extension_in_dir(msg_dir_path, ["aac"])
 
 
+def know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_ids):
+    if not os.path.isdir(msg_ids_dir_path):
+        os.mkdir(msg_ids_dir_path)
+
+    existed_chatrooms = {}
+    for fn in os.listdir(chats_dir_path):
+        if not os.path.isdir(f"{chats_dir_path}/{fn}"):
+            continue
+        record = parse_chatroom_dir_name(fn)
+        existed_chatrooms[record.id] = fn
+
+    if len(chatroom_ids_to_know_msg_ids) == 0:
+        chatroom_ids_to_know_msg_ids = existed_chatrooms.keys()
+
+    logging.debug(f"chatroom_ids_to_know_msg_ids amount= {len(chatroom_ids_to_know_msg_ids)}"
+                  f"\n  {chatroom_ids_to_know_msg_ids}")
+    for chatroom_id in chatroom_ids_to_know_msg_ids:
+        chat_dir_name = existed_chatrooms.get(chatroom_id)
+        if chat_dir_name is None:
+            continue
+
+        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+        thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
+        image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
+
+        thumbnail_msg_ids = set(
+            (get_chat_msg_id_from_chat_msg_thumbnail_name(fn) for fn in os.listdir(thumbnail_dir_path)))
+        image_msg_ids = set((get_chat_msg_id_from_chat_msg_image_name(fn) for fn in os.listdir(image_dir_path)))
+        approximately_msg_ids = thumbnail_msg_ids - image_msg_ids
+
+        if len(approximately_msg_ids) == 0:
+            continue
+
+        chat_dir_path = gen_knowing_msg_ids_chatroom_dir_path(msg_ids_dir_path, chat_dir_name)
+        if not os.path.isdir(chat_dir_path):
+            os.mkdir(chat_dir_path)
+
+        approximately_msg_ids = sorted(approximately_msg_ids)
+        logging.debug(f"{chat_dir_name} approximately_msg_ids amount= {len(approximately_msg_ids)}"
+                      f"\n  {approximately_msg_ids}")
+        for msg_id in approximately_msg_ids:
+            fn = gen_chat_msg_thumbnail_name(msg_id)
+            if os.path.exists(f"{chat_dir_path}/{fn}"):
+                continue
+            shutil.copy2(f"{thumbnail_dir_path}/{fn}",
+                         f"{chat_dir_path}/{fn}")
+
+
 def main():
     ap = argparse.ArgumentParser(
-        description="LINE Chat Backup Helper\n"
-                    "-----------------------------------------------\n"
-                    "  * classify images into `thumbnails`, `images` or `original_images` folders\n"
-                    "  * append file extension to file name\n"
-                    "  * prefix a meaningful name to chat room folder(ID)"
-                    " after extracting mappings of chat room ID and name provided BY YOU\n"
-                    "  * compare chat room list with the older one",
+        description="LINE Chat Backup Helper"
+                    "\n-----------------------------------------------"
+                    "\n1.  Classify images into `thumbnails`, `images` or `original_images` folders"
+                    "\n2.  Append file extension to file name"
+                    "\n3.  Prefix a meaningful name to chat room folder(ID)"
+                    " after extracting mappings of chat room ID and name provided BY YOU"
+                    "\n4.  Compare chat room list with the older one"
+                    "\n5.  Know approximately video message IDs through thumbnail names of video and"
+                    "\n    other types messages in assigned or all (default) chat rooms",
         formatter_class=argparse.RawTextHelpFormatter, )
     ap.add_argument("-e", "--execution", required=False,
-                    type=int, choices=range(1, 3),
-                    help="ONLY (1) extract mappings or (2) prefix name")
+                    type=int, choices=range(1, 4),
+                    help="ONLY (1) extract mappings (2) prefix name (3) know message IDs")
     ap.add_argument("-d", "--chats-dir", required=True,
                     help="your backup directory path of `/sdcard/Android/data/jp.naver.line.android/files/chats`")
     ap.add_argument("-l", "--chatroom-db", required=False, metavar="chatroom.csv",
                     help="The CSV file saves the mappings of chat room ID and name provided BY YOU.")
     ap.add_argument("-d0", "--old-chats-dir", required=False, metavar="CHATS_DIR",
                     help="compare chat rooms in the `--chats-dir` folder with the older one")
+    ap.add_argument("-i", "--know-message-ids", required=False, metavar="ROOM_ID", nargs="*",
+                    help="Know approximately video message IDs through thumbnail names of video and"
+                         "\n other types messages in assigned or all (default) chat rooms."
+                         "\nThese thumbnails are put in the `_MessageIDs` folder beside `chats` and"
+                         "\n categorized by chat room.")
 
     args = vars(ap.parse_args())
     execution = args["execution"]
     chats_dir_path = args["chats_dir"]
     chatroom_db_path = args["chatroom_db"]
     old_chats_dir_path = args["old_chats_dir"]
+    chatroom_ids_to_know_msg_ids = args["know_message_ids"]
 
     logging.debug(f"\n=== console params ====================================\n"
                   f"execution= {execution}\n"
                   f"chats_dir_path= {chats_dir_path}\n"
                   f"chatroom_db_path= {chatroom_db_path}\n"
                   f"old_chats_dir_path= {old_chats_dir_path}\n"
+                  f"know_message_ids= {chatroom_ids_to_know_msg_ids}\n"
                   f"=======================================================\n")
 
     chats_dir_path = os.path.expanduser(chats_dir_path)
@@ -426,8 +525,10 @@ def main():
                   f"chats_dir_path= {chats_dir_path}\n"
                   f"chatroom_db_path= {chatroom_db_path}\n"
                   f"old_chats_dir_path= {old_chats_dir_path}\n"
+                  f"know_message_ids= {chatroom_ids_to_know_msg_ids}\n"
                   f"=======================================================\n")
 
+    msg_ids_dir_path = gen_knowing_msg_ids_root_dir_path(chats_dir_path)
     if execution is None:
         logging.debug("move_all_images_to_dir")
         move_all_images_to_dir(chats_dir_path)
@@ -439,6 +540,9 @@ def main():
         if old_chats_dir_path:
             new_chatrooms = diff_chatroom(old_chats_dir_path, chats_dir_path)
             logging.info(f"new chat rooms= {new_chatrooms}")
+
+        if chatroom_ids_to_know_msg_ids is not None:
+            know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_ids)
 
     elif execution == 1:
         if not chatroom_db_path:
@@ -455,6 +559,14 @@ def main():
 
         logging.debug("prefix_chatroom_dir_name")
         prefix_chatroom_dir_name(chats_dir_path, chatroom_db_path)
+
+    elif execution == 3:
+        if chatroom_ids_to_know_msg_ids is None:
+            logging.error(f"Knowing message IDs requires `--know-message-ids`.")
+            return
+
+        logging.debug("know_message_ids")
+        know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_ids)
 
 
 if __name__ == '__main__':
