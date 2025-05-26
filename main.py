@@ -227,7 +227,7 @@ def extract_chatroom_id_name_mappings(chats_dir_path, output_path):
             chatroom.create(record)
 
 
-def prefix_chatroom_dir_name(chats_dir_path, chatroom_db_path):
+def prefix_chatroom_dirs_with_human_readable_names(chats_dir_path, chatroom_db_path):
     """
     Prefix the name of the chat room to ID.
 
@@ -259,13 +259,13 @@ def prefix_chatroom_dir_name(chats_dir_path, chatroom_db_path):
                   f"{chats_dir_path}/{new_fn}")
 
 
-def diff_chatroom(old_chat_dir_path, new_chat_dir_path):
-    if not os.path.isdir(old_chat_dir_path) or not os.path.isdir(new_chat_dir_path):
-        logging.error(f"is not a directory: `{old_chat_dir_path}`\n  or `{new_chat_dir_path}")
+def find_new_chatrooms(old_chats_dir_path, new_chats_dir_path):
+    if not os.path.isdir(old_chats_dir_path) or not os.path.isdir(new_chats_dir_path):
+        logging.error(f"is not a directory: `{old_chats_dir_path}`\n  or `{new_chats_dir_path}")
         return
 
-    old_filenames = [fn for fn in os.listdir(old_chat_dir_path) if os.path.isdir(f"{old_chat_dir_path}/{fn}")]
-    new_filenames = [fn for fn in os.listdir(new_chat_dir_path) if os.path.isdir(f"{new_chat_dir_path}/{fn}")]
+    old_filenames = [fn for fn in os.listdir(old_chats_dir_path) if os.path.isdir(f"{old_chats_dir_path}/{fn}")]
+    new_filenames = [fn for fn in os.listdir(new_chats_dir_path) if os.path.isdir(f"{new_chats_dir_path}/{fn}")]
 
     old_ids = set()
     for fn in old_filenames:
@@ -323,7 +323,7 @@ def move_original_images_to_dir(msg_dir_path, original_image_names, original_ima
                   f"{original_image_dir_path}/{fn}")
 
 
-def move_all_images_to_dir(chats_dir_path):
+def classify_chat_images_by_compression_level_into_folders(chats_dir_path):
     if not os.path.isdir(chats_dir_path):
         logging.error(f"is not a directory: {chats_dir_path}")
         return
@@ -374,7 +374,7 @@ def substitute_file_extension(dir_path, fn, extension):
               f"{dir_path}/{new_fn}")
 
 
-def rename_file_extension_in_dir(dir_path, extension, is_append=False):
+def rename_file_extensions_in_dir(dir_path, extension, is_append=False):
     if not os.path.isdir(dir_path):
         logging.error(f"is not a directory: {dir_path}")
         return
@@ -389,7 +389,10 @@ def rename_file_extension_in_dir(dir_path, extension, is_append=False):
             substitute_file_extension(dir_path, fn, extension)
 
 
-def correct_file_extension_in_dir(dir_path, excluded_extensions: list = None):
+def fix_file_extensions_by_content_in_dir(dir_path, excluded_extensions: list = None):
+    """
+    Append instead of substitute file extension to free from backup.
+    """
     if excluded_extensions is None:
         ext_pattern = None
     else:
@@ -420,7 +423,7 @@ def correct_file_extension_in_dir(dir_path, excluded_extensions: list = None):
     logging.debug(f"types= {types} @ `{dir_path[-70:]}`")
 
 
-def correct_images_file_extension(chats_dir_path):
+def correct_chat_file_extensions(chats_dir_path):
     if not os.path.isdir(chats_dir_path):
         logging.error(f"is not a directory: {chats_dir_path}")
         return
@@ -432,10 +435,10 @@ def correct_images_file_extension(chats_dir_path):
         image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
         original_image_dir_path = gen_chat_msg_original_image_dir_path(msg_dir_path)
 
-        rename_file_extension_in_dir(thumbnail_dir_path, CHAT_MSG_THUMBNAIL_EXT, True)
-        rename_file_extension_in_dir(image_dir_path, CHAT_MSG_IMAGE_EXT, True)
-        correct_file_extension_in_dir(original_image_dir_path)
-        correct_file_extension_in_dir(msg_dir_path, ["aac"])
+        rename_file_extensions_in_dir(thumbnail_dir_path, CHAT_MSG_THUMBNAIL_EXT, True)
+        rename_file_extensions_in_dir(image_dir_path, CHAT_MSG_IMAGE_EXT, True)
+        fix_file_extensions_by_content_in_dir(original_image_dir_path)
+        fix_file_extensions_by_content_in_dir(msg_dir_path, ["aac"])
 
 
 def know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_ids):
@@ -542,15 +545,15 @@ def main():
 
     msg_ids_dir_path = gen_knowing_msg_ids_root_dir_path(chats_dir_path)
     if execution is None:
-        logging.debug("move_all_images_to_dir")
-        move_all_images_to_dir(chats_dir_path)
-        correct_images_file_extension(chats_dir_path)
+        logging.debug("classify_chat_images_by_compression_level_into_folders")
+        classify_chat_images_by_compression_level_into_folders(chats_dir_path)
+        correct_chat_file_extensions(chats_dir_path)
 
         if chatroom_db_path:
-            prefix_chatroom_dir_name(chats_dir_path, chatroom_db_path)
+            prefix_chatroom_dirs_with_human_readable_names(chats_dir_path, chatroom_db_path)
 
         if old_chats_dir_path:
-            new_chatrooms = diff_chatroom(old_chats_dir_path, chats_dir_path)
+            new_chatrooms = find_new_chatrooms(old_chats_dir_path, chats_dir_path)
             logging.info(f"new chat rooms= {new_chatrooms}")
 
         if chatroom_ids_to_know_msg_ids is not None:
@@ -569,8 +572,8 @@ def main():
             logging.error(f"Prefixing name requires `--chatroom-db`.")
             return
 
-        logging.debug("prefix_chatroom_dir_name")
-        prefix_chatroom_dir_name(chats_dir_path, chatroom_db_path)
+        logging.debug("prefix_chatroom_dirs_with_human_readable_names")
+        prefix_chatroom_dirs_with_human_readable_names(chats_dir_path, chatroom_db_path)
 
     elif execution == 3:
         if chatroom_ids_to_know_msg_ids is None:
