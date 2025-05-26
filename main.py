@@ -26,9 +26,11 @@ CHATROOM_FIELD_NAMES = ["ID", "Name", "Status"]
 CHAT_MSG_DIR_NAME = "messages"
 CHAT_MSG_THUMBNAIL_DIR_NAME = "thumbnails"
 CHAT_MSG_IMAGE_DIR_NAME = "images"
+CHAT_MSG_ORIGINAL_IMAGE_DIR_NAME = "original_images"
 CHAT_MSG_THUMBNAIL_POSTFIX = ".thumb"
 CHAT_MSG_THUMBNAIL_EXT = "jpg"
 CHAT_MSG_IMAGE_EXT = "jpg"
+CHAT_MSG_ORIGINAL_IMAGE_POSTFIX = ".original"
 
 KNOWING_MSG_IDS_ROOT_DIR_NAME = "_MessageIDs"
 
@@ -166,6 +168,10 @@ def gen_chat_msg_image_dir_path(msg_dir_path):
     return f"{msg_dir_path}/{CHAT_MSG_IMAGE_DIR_NAME}"
 
 
+def gen_chat_msg_original_image_dir_path(msg_dir_path):
+    return f"{msg_dir_path}/{CHAT_MSG_ORIGINAL_IMAGE_DIR_NAME}"
+
+
 def gen_chat_msg_thumbnail_name(msg_id):
     return f"{msg_id}{CHAT_MSG_THUMBNAIL_POSTFIX}.{CHAT_MSG_THUMBNAIL_EXT}"
 
@@ -276,21 +282,24 @@ def diff_chatroom(old_chat_dir_path, new_chat_dir_path):
     return diff_list
 
 
-def move_images_to_dir(msg_dir_path, thumbnail_names, thumbnail_dir_name, image_dir_name):
+def move_images_to_dir(msg_dir_path, thumbnail_names, thumbnail_dir_path, image_dir_path):
     not_existed_img_amount = 0
 
-    thumbnail_dir_path = f"{msg_dir_path}/{thumbnail_dir_name}"
     if not os.path.isdir(thumbnail_dir_path):
         os.mkdir(thumbnail_dir_path)
 
-    image_dir_path = f"{msg_dir_path}/{image_dir_name}"
     if not os.path.isdir(image_dir_path):
         os.mkdir(image_dir_path)
 
     for image_name in thumbnail_names:
-        os.rename(f"{msg_dir_path}/{image_name}.thumb",
-                  f"{thumbnail_dir_path}/{image_name}.thumb")
+        fn = f"{image_name}{CHAT_MSG_THUMBNAIL_POSTFIX}"
+        os.rename(f"{msg_dir_path}/{fn}",
+                  f"{thumbnail_dir_path}/{fn}")
 
+        # Thumbnails are available not only for images, but also for videos and links.
+        # However, ONLY images may exist in the message folder,
+        # and their file names match their respective thumbnails.
+        # The image will be downloaded ONLY after the user clicks it.
         if os.path.exists(f"{msg_dir_path}/{image_name}"):
             os.rename(f"{msg_dir_path}/{image_name}",
                       f"{image_dir_path}/{image_name}")
@@ -304,14 +313,14 @@ def move_images_to_dir(msg_dir_path, thumbnail_names, thumbnail_dir_name, image_
                       f"\n    msg_dir_path= {msg_dir_path}")
 
 
-def move_original_images_to_dir(msg_dir_path, original_image_names, original_image_dir_name):
-    original_image_dir_path = f"{msg_dir_path}/{original_image_dir_name}"
+def move_original_images_to_dir(msg_dir_path, original_image_names, original_image_dir_path):
     if not os.path.isdir(original_image_dir_path):
         os.mkdir(original_image_dir_path)
 
     for image_name in original_image_names:
-        os.rename(f"{msg_dir_path}/{image_name}.original",
-                  f"{original_image_dir_path}/{image_name}.original")
+        fn = f"{image_name}{CHAT_MSG_ORIGINAL_IMAGE_POSTFIX}"
+        os.rename(f"{msg_dir_path}/{fn}",
+                  f"{original_image_dir_path}/{fn}")
 
 
 def move_all_images_to_dir(chats_dir_path):
@@ -321,7 +330,7 @@ def move_all_images_to_dir(chats_dir_path):
 
     chat_dir_names = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
     for chat_dir_name in chat_dir_names:
-        msg_dir_path = f"{chats_dir_path}/{chat_dir_name}/messages"
+        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
 
         thumbnail_names = []
         original_image_names = []
@@ -337,8 +346,11 @@ def move_all_images_to_dir(chats_dir_path):
                       f", original_images amount= {len(original_image_names)}"
                       f" in `{chat_dir_name}`")
 
-        move_images_to_dir(msg_dir_path, thumbnail_names, "thumbnails", "images")
-        move_original_images_to_dir(msg_dir_path, original_image_names, "original_images")
+        thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
+        image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
+        original_image_dir_path = gen_chat_msg_original_image_dir_path(msg_dir_path)
+        move_images_to_dir(msg_dir_path, thumbnail_names, thumbnail_dir_path, image_dir_path)
+        move_original_images_to_dir(msg_dir_path, original_image_names, original_image_dir_path)
 
 
 def append_file_extension(dir_path, fn, extension):
@@ -415,13 +427,13 @@ def correct_images_file_extension(chats_dir_path):
 
     chat_dir_names = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
     for chat_dir_name in chat_dir_names:
-        msg_dir_path = f"{chats_dir_path}/{chat_dir_name}/messages"
-        thumbnail_dir_path = f"{msg_dir_path}/thumbnails"
-        image_dir_path = f"{msg_dir_path}/images"
-        original_image_dir_path = f"{msg_dir_path}/original_images"
+        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+        thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
+        image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
+        original_image_dir_path = gen_chat_msg_original_image_dir_path(msg_dir_path)
 
-        rename_file_extension_in_dir(thumbnail_dir_path, "jpg", True)
-        rename_file_extension_in_dir(image_dir_path, "jpg", True)
+        rename_file_extension_in_dir(thumbnail_dir_path, CHAT_MSG_THUMBNAIL_EXT, True)
+        rename_file_extension_in_dir(image_dir_path, CHAT_MSG_IMAGE_EXT, True)
         correct_file_extension_in_dir(original_image_dir_path)
         correct_file_extension_in_dir(msg_dir_path, ["aac"])
 
