@@ -18,6 +18,7 @@ Therefore, I organize these media messages, and then save them to my portable st
 4.  Compare chat room list with the older one
 5.  Know approximately video message IDs through thumbnail names of video and 
     other types messages in assigned or all (default) chat rooms
+6.  Incrementally copy chat message files from the RAW backup directory
 
 
 
@@ -39,8 +40,8 @@ pipenv install
 ## Usage
 
 ```
-usage: main.py [-h] [-e {1,2,3}] -d CHATS_DIR [-l chatroom.csv]
-               [-d0 CHATS_DIR] [-i [ROOM_ID [ROOM_ID ...]]]
+usage: main.py [-h] [-e {1,2,3,4}] -d CHATS_DIR [-l chatroom.csv]
+               [-d0 CHATS_DIR] [-i [ROOM_ID [ROOM_ID ...]]] [-s CHATS_DIR]
 
 LINE Chat Backup Helper
 -----------------------------------------------
@@ -50,11 +51,12 @@ LINE Chat Backup Helper
 4.  Compare chat room list with the older one
 5.  Know approximately video message IDs through thumbnail names of video and
     other types messages in assigned or all (default) chat rooms
+6.  Incrementally copy chat message files from the RAW backup directory
 
 optional arguments:
   -h, --help            show this help message and exit
-  -e {1,2,3}, --execution {1,2,3}
-                        ONLY (1) extract mappings (2) prefix name (3) know message IDs
+  -e {1,2,3,4}, --execution {1,2,3,4}
+                        ONLY (1) extract mappings (2) prefix name (3) know message IDs (4) copy from RAW backup
   -d CHATS_DIR, --chats-dir CHATS_DIR
                         your backup directory path of `/sdcard/Android/data/jp.naver.line.android/files/chats`
   -l chatroom.csv, --chatroom-db chatroom.csv
@@ -66,6 +68,10 @@ optional arguments:
                          other types messages in assigned or all (default) chat rooms.
                         These thumbnails are put in the `_MessageIDs` folder beside `chats` and
                          categorized by chat room.
+  -s CHATS_DIR, --src-chats-dir CHATS_DIR
+                        This is a path to the directory whose contents
+                         are a direct backup of `/sdcard/Android/data/jp.naver.line.android/files/chats`
+                         and will be copied incrementally to another directory assigned by `-d`.
 ```
 
 
@@ -89,6 +95,11 @@ pipenv run main.py -e 2
 pipenv run main.py -e 3 
     -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats" 
     -i c3337f8e15f2f1d79f69fd2b0575476b6 u111f36cae69bfd641933b23eee717b54
+
+# Feature 6
+pipenv run main.py -e 4 
+    -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats"
+    -s "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20250101_0000\files\chats"
 
 # Feature 1, 2, 3(ONLY prefix), 4 and 5
 pipenv run main.py 
@@ -330,6 +341,127 @@ Output:
         |-- 50001.thumb.jpg
         |-- 50002.thumb.jpg
     |-- u111f36cae69bfd641933b23eee717b54/
+```
+
+
+
+### Example: Feature 6
+
+```
+# Feature 6
+pipenv run main.py -e 4 
+    -d "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats"
+    -s "C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20250101_0000\files\chats"
+```
+
+Input:
+```
+-d CHATS_DIR
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats/
+    |-- 家有兩寶-c3337f8e15f2f1d79f69fd2b0575476b6/messages/
+        |-- images/
+            |-- 8552.jpg
+            |-- 10000.jpg
+            |-- 11111.jpg
+        |-- original_images/
+            |-- 8552.original.gif
+            |-- 10000.original.jpg
+            |-- 11111.original.png
+        |-- thumbnails/
+            |-- 8552.thumb.jpg
+            |-- 10000.thumb.jpg
+            |-- 11111.thumb.jpg
+        |-- 22222
+        |-- 22706.tmp
+        |-- 29139.thumb.tmp.jpg
+        |-- 31674.mp4
+        |-- 33333.pdf
+        |-- 44444.zip
+        |-- voice_38490.aac
+    |-- 被退出-旅行團-c7acf23b06ad3e4c029dc5ef6d6e88444/messages/
+        |-- images/
+            |-- 111666.jpg
+        |-- original_images/
+        |-- thumbnails/
+            |-- 111666.thumb.jpg
+    |-- u111f36cae69bfd641933b23eee717b54/messages/
+        |-- images/
+        |-- original_images/
+        |-- thumbnails/
+        |-- voice_11110.aac
+
+
+-s CHATS_DIR
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20250101_0000\files\chats/
+    |-- c3337f8e15f2f1d79f69fd2b0575476b6/messages/
+        |-- 8552
+        |-- 8552.original
+        |-- 8552.thumb
+        |-- 10000
+        |-- 10000.original
+        |-- 10000.thumb
+        |-- 11111
+        |-- 11111.original
+        |-- 11111.thumb
+        |-- 22222
+        |-- 22706.tmp
+        |-- 29139.thumb.tmp
+        |-- 31674
+        |-- 33333
+        |-- 44444
+        |-- 60001
+        |-- 60001.thumb
+        |-- voice_38490.aac
+    |-- c7acf23b06ad3e4c029dc5ef6d6e88444/messages/
+        |-- 111666
+        |-- 111666.thumb
+    |-- u111f36cae69bfd641933b23eee717b54/messages/
+    |-- u222f36cae69bfd641933b23eee717b54/messages/
+        |-- voice_22220.aac
+```
+
+
+Output:
+```
+|-- C:\Users\Stella\LINE\Android-data-jp.naver.line.android_20231005_2222\files\chats/
+    |-- 家有兩寶-c3337f8e15f2f1d79f69fd2b0575476b6/messages/
+        |-- images/
+            |-- 8552.jpg
+            |-- 10000.jpg
+            |-- 11111.jpg
+        |-- original_images/
+            |-- 8552.original.gif
+            |-- 10000.original.jpg
+            |-- 11111.original.png
+        |-- thumbnails/
+            |-- 8552.thumb.jpg
+            |-- 10000.thumb.jpg
+            |-- 11111.thumb.jpg
+        |-- 22222
+        |-- 22706.tmp
+        |-- 29139.thumb.tmp.jpg
+        |-- 31674.mp4
+        |-- 33333.pdf
+        |-- 44444.zip
+        |-- 60001
+        |-- 60001.thumb
+        |-- voice_38490.aac
+    |-- 被退出-旅行團-c7acf23b06ad3e4c029dc5ef6d6e88444/messages/
+        |-- images/
+            |-- 111666.jpg
+        |-- original_images/
+        |-- thumbnails/
+            |-- 111666.thumb.jpg
+    |-- u111f36cae69bfd641933b23eee717b54/messages/
+        |-- images/
+        |-- original_images/
+        |-- thumbnails/
+        |-- voice_11110.aac    <-- It is NOT deleted because of just incremental copy instead of full sync.
+    |-- u222f36cae69bfd641933b23eee717b54/messages/
+        |-- images/
+        |-- original_images/
+        |-- thumbnails/
+        |-- voice_22220.aac
 ```
 
 

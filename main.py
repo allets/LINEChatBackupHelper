@@ -1,11 +1,14 @@
 import argparse
 import csv
+import datetime
 import logging
 import os
 import re
 import shutil
 import sys
+from abc import ABC, abstractmethod
 from enum import IntEnum, unique
+from typing import List, Dict
 
 import filetype
 
@@ -190,6 +193,259 @@ def gen_knowing_msg_ids_root_dir_path(chats_dir_path):
 
 def gen_knowing_msg_ids_chatroom_dir_path(msg_ids_dir_path, chat_dir_name):
     return f"{msg_ids_dir_path}/{chat_dir_name}"
+
+
+class RawBackupChatDirsHelper:
+    """
+    Provide utility methods for operating on all chatroom directories in the direct backup directory.
+    """
+
+    def __init__(self, base_dir_path):
+        self._base_dir_path = base_dir_path
+
+    def get_base_dir_path(self):
+        return self._base_dir_path
+
+    @staticmethod
+    def iter_chat_dir_names(base_dir_path):
+        for fn in os.listdir(base_dir_path):
+            if os.path.isdir(os.path.join(base_dir_path, fn)):
+                yield fn
+
+    def list_all_chat_dir_names(self):
+        return [fn for fn in self.iter_chat_dir_names(self.get_base_dir_path())]
+
+
+class RawBackupChatMsgFileHelper:
+    """
+    Provide utility methods for operating on the chat message files in the direct backup directory.
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def parse_chat_msg_id_from_file_name(filename) -> int:
+        """
+        Returns: Return zero if msg ID is not found.
+        """
+        msg_id = 0
+
+        # file name ex: `25458`, `voice_43312.aac`, `43416.m4a`, `message-content-temp-3177902840377559522.tmp`
+        # https://regexr.com/8f7qe
+        pattern = r"^(voice_)?([0-9]+)(\..+)*"
+        result = re.match(pattern, filename)
+        if result is not None:
+            groups = result.groups()
+            # logging.debug(f"fn match groups= {groups}")
+            prefix, msg_id, _ = groups
+            msg_id = int(msg_id)
+
+        return msg_id
+
+    @staticmethod
+    def iter_files(chats_dir_path, chat_dir_name):
+        """
+        Yield a tuple (parent_dir_path, fn) for a chat message file.
+        """
+        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+        for fn in os.listdir(msg_dir_path):
+            filepath = os.path.join(msg_dir_path, fn)
+            if os.path.isfile(filepath):
+                yield msg_dir_path, fn
+
+
+class ChatDirsHelper(RawBackupChatDirsHelper):
+    """
+    Provide utility methods for operating on all chatroom directories.
+    """
+
+    def __init__(self, base_dir_path):
+        super().__init__(base_dir_path)
+        self._chat_dir_names_by_id = {}
+        self.load_chat_dir_names()
+
+    def load_chat_dir_names(self):
+        for fn in self.iter_chat_dir_names(self._base_dir_path):
+            record = parse_chatroom_dir_name(fn)
+            self._chat_dir_names_by_id[record.id] = fn
+
+    def list_all_chat_dir_names(self):
+        return list(self._chat_dir_names_by_id.values())
+
+    def get_chat_dir_name_by_id(self, chatroom_id) -> str:
+        return self._chat_dir_names_by_id.get(chatroom_id)
+
+
+class ChatMsgDirHelper:
+    """
+    Provide utility methods for operating on the directories containing chat message files.
+    """
+
+    def __init__(self, chat_dirs_helper: ChatDirsHelper):
+        self._chat_dirs_helper = chat_dirs_helper
+
+    def get_msg_dir_path_by_chatroom_id(self, chatroom_id):
+        chats_dir_path = self._chat_dirs_helper.get_base_dir_path()
+        chat_dir_name = self._chat_dirs_helper.get_chat_dir_name_by_id(chatroom_id)
+        if chat_dir_name is None:
+            chat_dir_name = chatroom_id
+            msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+            os.makedirs(msg_dir_path, exist_ok=True)
+        else:
+            msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+
+        return msg_dir_path
+
+
+class ChatMsgFileHelper(RawBackupChatMsgFileHelper):
+    """
+    Provide utility methods for operating on the chat message files.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def iter_files_in_dirs(chats_dir_path, chat_dir_name,
+                           in_dir_msg=False,
+                           in_dir_thumbnails=False,
+                           in_dir_original_images=False,
+                           in_dir_images=False):
+        """
+        Yield a tuple (parent_dir_path, fn) for a chat message file.
+        """
+        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
+
+        if in_dir_msg:
+            for fn in os.listdir(msg_dir_path):
+                filepath = os.path.join(msg_dir_path, fn)
+                if os.path.isfile(filepath):
+                    yield msg_dir_path, fn
+
+        dir_paths = []
+
+        if in_dir_thumbnails:
+            thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
+            dir_paths.append(thumbnail_dir_path)
+
+        if in_dir_original_images:
+            original_image_dir_path = gen_chat_msg_original_image_dir_path(msg_dir_path)
+            dir_paths.append(original_image_dir_path)
+
+        if in_dir_images:
+            image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
+            dir_paths.append(image_dir_path)
+
+        for dir_path in dir_paths:
+            if os.path.isdir(dir_path):
+                for fn in os.listdir(dir_path):
+                    yield dir_path, fn
+
+    @staticmethod
+    def iter_files(chats_dir_path, chat_dir_name):
+        return ChatMsgFileHelper.iter_files_in_dirs(chats_dir_path, chat_dir_name, True, True, True, True)
+
+
+class SyncChatMsgFileBase(ABC):
+    def __init__(self, dst_chat_dirs_helper: ChatDirsHelper):
+        self._dst_chat_dirs_helper = dst_chat_dirs_helper
+
+    @staticmethod
+    def find_last_sync_timestamp(chat_dirs_helper: RawBackupChatDirsHelper) -> float:
+        last_sync_timestamp = 0
+        latest_file_info = (0, 0, "")  # (modified_time, msg_id, chat_dir_name)
+        chats_dir_path = chat_dirs_helper.get_base_dir_path()
+        for chat_dir_name in chat_dirs_helper.list_all_chat_dir_names():
+            latest_file_info_in_chatroom = (0, 0)  # (modified_time, msg_id)
+
+            for (parent_dir_path, fn) in ChatMsgFileHelper.iter_files_in_dirs(chats_dir_path, chat_dir_name,
+                                                                              True, True):
+                filepath = os.path.join(parent_dir_path, fn)
+                modified_time = os.path.getmtime(filepath)
+                msg_id = RawBackupChatMsgFileHelper.parse_chat_msg_id_from_file_name(fn)
+                file_info = (modified_time, msg_id)
+                if msg_id > 0:
+                    if modified_time > last_sync_timestamp:
+                        last_sync_timestamp = modified_time
+                        latest_file_info = file_info + (chat_dir_name,)
+
+                    if modified_time > latest_file_info_in_chatroom[0]:
+                        latest_file_info_in_chatroom = file_info
+
+            readable_datetime = datetime.datetime.fromtimestamp(latest_file_info_in_chatroom[0]).isoformat()
+            logging.debug(
+                f"latest msg file in chatroom is {latest_file_info_in_chatroom[1]: <7}, datetime= {readable_datetime}"
+                f" @ {chat_dir_name[:20]}")
+
+        readable_datetime = datetime.datetime.fromtimestamp(latest_file_info[0]).isoformat()
+        logging.debug(f"latest msg file is {latest_file_info[1]: <7}"
+                      f", datetime= {latest_file_info[0]}({readable_datetime})"
+                      f" @ {latest_file_info[2][:20]}")
+
+        return last_sync_timestamp
+
+    @abstractmethod
+    def find_chat_msg_files_to_sync(self, last_sync_timestamp: float) -> Dict[str, List[str]]:
+        """
+        Returns: Return a dict[chat_dir_name, file_name_list].
+        """
+        return NotImplemented
+
+    @abstractmethod
+    def sync_chat_msg_files(self, msg_files: Dict[str, List[str]]):
+        """
+        Args:
+            msg_files: a dict[chat_dir_name, file_name_list].
+        """
+        return NotImplemented
+
+    def start(self):
+        last_sync_timestamp = self.find_last_sync_timestamp(self._dst_chat_dirs_helper)
+        msg_files = self.find_chat_msg_files_to_sync(last_sync_timestamp)
+        logging.debug(f"chat_msg_files_to_sync, chatroom amt= {len(msg_files)}\n    {msg_files}")
+        self.sync_chat_msg_files(msg_files)
+
+
+class IncrementallyCopyChatMsgFilesFromRawBackup(SyncChatMsgFileBase):
+    def __init__(self, src_chats_dir_path, dst_chat_dirs_helper: ChatDirsHelper):
+        super().__init__(dst_chat_dirs_helper)
+        self._src_chats_dir_path = src_chats_dir_path
+
+    def find_chat_msg_files_to_sync(self, last_sync_timestamp: float) -> Dict[str, List[str]]:
+        msg_file_per_chatroom = {}
+        for chat_dir_name in RawBackupChatDirsHelper.iter_chat_dir_names(self._src_chats_dir_path):
+            file_name_list = []
+
+            for (parent_dir_path, fn) in RawBackupChatMsgFileHelper.iter_files(self._src_chats_dir_path,
+                                                                               chat_dir_name):
+                filepath = os.path.join(parent_dir_path, fn)
+                modified_time = os.path.getmtime(filepath)
+                if modified_time <= last_sync_timestamp:
+                    continue
+
+                file_name_list.append(fn)
+
+            if len(file_name_list) > 0:
+                msg_file_per_chatroom[chat_dir_name] = file_name_list
+
+        return msg_file_per_chatroom
+
+    def sync_chat_msg_files(self, msg_files: Dict[str, List[str]]):
+        dst_chat_msg_dir_helper = ChatMsgDirHelper(self._dst_chat_dirs_helper)
+        for chat_dir_name, file_name_list in msg_files.items():
+            src_msg_dir_path = gen_chat_msg_dir_path(self._src_chats_dir_path, chat_dir_name)
+            dst_msg_dir_path = dst_chat_msg_dir_helper.get_msg_dir_path_by_chatroom_id(chat_dir_name)
+
+            for fn in file_name_list:
+                shutil.copy2(os.path.join(src_msg_dir_path, fn),
+                             os.path.join(dst_msg_dir_path, fn))
+
+
+def copy_from_raw_backup(src_chats_dir_path, dst_chats_dir_path):
+    dst_chat_dirs_helper = ChatDirsHelper(dst_chats_dir_path)
+    task = IncrementallyCopyChatMsgFilesFromRawBackup(src_chats_dir_path, dst_chat_dirs_helper)
+    task.start()
 
 
 def extract_chatroom_id_name_mappings(chats_dir_path, output_path):
@@ -499,11 +755,12 @@ def main():
                     " after extracting mappings of chat room ID and name provided BY YOU"
                     "\n4.  Compare chat room list with the older one"
                     "\n5.  Know approximately video message IDs through thumbnail names of video and"
-                    "\n    other types messages in assigned or all (default) chat rooms",
+                    "\n    other types messages in assigned or all (default) chat rooms"
+                    "\n6.  Incrementally copy chat message files from the RAW backup directory",
         formatter_class=argparse.RawTextHelpFormatter, )
     ap.add_argument("-e", "--execution", required=False,
-                    type=int, choices=range(1, 4),
-                    help="ONLY (1) extract mappings (2) prefix name (3) know message IDs")
+                    type=int, choices=range(1, 5),
+                    help="ONLY (1) extract mappings (2) prefix name (3) know message IDs (4) copy from RAW backup")
     ap.add_argument("-d", "--chats-dir", required=True,
                     help="your backup directory path of `/sdcard/Android/data/jp.naver.line.android/files/chats`")
     ap.add_argument("-l", "--chatroom-db", required=False, metavar="chatroom.csv",
@@ -515,6 +772,10 @@ def main():
                          "\n other types messages in assigned or all (default) chat rooms."
                          "\nThese thumbnails are put in the `_MessageIDs` folder beside `chats` and"
                          "\n categorized by chat room.")
+    ap.add_argument("-s", "--src-chats-dir", required=False, metavar="CHATS_DIR",
+                    help="This is a path to the directory whose contents"
+                         "\n are a direct backup of `/sdcard/Android/data/jp.naver.line.android/files/chats`"
+                         "\n and will be copied incrementally to another directory assigned by `-d`.")
 
     args = vars(ap.parse_args())
     execution = args["execution"]
@@ -522,6 +783,7 @@ def main():
     chatroom_db_path = args["chatroom_db"]
     old_chats_dir_path = args["old_chats_dir"]
     chatroom_ids_to_know_msg_ids = args["know_message_ids"]
+    src_chats_dir_path = args["src_chats_dir"]
 
     logging.debug(f"\n=== console params ====================================\n"
                   f"execution= {execution}\n"
@@ -529,11 +791,13 @@ def main():
                   f"chatroom_db_path= {chatroom_db_path}\n"
                   f"old_chats_dir_path= {old_chats_dir_path}\n"
                   f"know_message_ids= {chatroom_ids_to_know_msg_ids}\n"
+                  f"src_chats_dir_path= {src_chats_dir_path}\n"
                   f"=======================================================\n")
 
     chats_dir_path = os.path.expanduser(chats_dir_path)
     chatroom_db_path = os.path.expanduser(chatroom_db_path) if chatroom_db_path else chatroom_db_path
     old_chats_dir_path = os.path.expanduser(old_chats_dir_path) if old_chats_dir_path else old_chats_dir_path
+    src_chats_dir_path = os.path.expanduser(src_chats_dir_path) if src_chats_dir_path else src_chats_dir_path
 
     logging.debug(f"\n=== params ============================================\n"
                   f"execution= {execution}\n"
@@ -541,6 +805,7 @@ def main():
                   f"chatroom_db_path= {chatroom_db_path}\n"
                   f"old_chats_dir_path= {old_chats_dir_path}\n"
                   f"know_message_ids= {chatroom_ids_to_know_msg_ids}\n"
+                  f"src_chats_dir_path= {src_chats_dir_path}\n"
                   f"=======================================================\n")
 
     msg_ids_dir_path = gen_knowing_msg_ids_root_dir_path(chats_dir_path)
@@ -582,6 +847,14 @@ def main():
 
         logging.debug("know_message_ids")
         know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_ids)
+
+    elif execution == 4:
+        if src_chats_dir_path is None:
+            logging.error(f"Copying from RAW backup requires `--src-chats-dir`.")
+            return
+
+        logging.debug("copy_from_raw_backup")
+        copy_from_raw_backup(src_chats_dir_path, chats_dir_path)
 
 
 if __name__ == '__main__':
