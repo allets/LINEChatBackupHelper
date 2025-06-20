@@ -276,6 +276,9 @@ class ChatDirsHelper(RawBackupChatDirsHelper):
     def get_chat_dir_name_by_id(self, chatroom_id) -> str:
         return self._chat_dir_names_by_id.get(chatroom_id)
 
+    def list_all_chatroom_ids(self):
+        return list(self._chat_dir_names_by_id.keys())
+
 
 class ChatMsgDirHelper:
     """
@@ -475,7 +478,7 @@ def extract_chatroom_id_name_mappings(chats_dir_path, output_path):
         logging.error(f"is not a directory: {chats_dir_path}")
         return
 
-    filenames = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
+    filenames = list(ChatDirsHelper.iter_chat_dir_names(chats_dir_path))
 
     with ChatroomWriter(output_path) as chatroom:
         for fn in filenames:
@@ -504,7 +507,7 @@ def prefix_chatroom_dirs_with_human_readable_names(chats_dir_path, chatroom_db_p
     if len(chatrooms) == 0:
         return
 
-    filenames = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
+    filenames = list(ChatDirsHelper.iter_chat_dir_names(chats_dir_path))
     for fn in filenames:
         chatroom = chatrooms.get(fn)
         if chatroom is None or not chatroom.name:
@@ -520,18 +523,11 @@ def find_new_chatrooms(old_chats_dir_path, new_chats_dir_path):
         logging.error(f"is not a directory: `{old_chats_dir_path}`\n  or `{new_chats_dir_path}")
         return
 
-    old_filenames = [fn for fn in os.listdir(old_chats_dir_path) if os.path.isdir(f"{old_chats_dir_path}/{fn}")]
-    new_filenames = [fn for fn in os.listdir(new_chats_dir_path) if os.path.isdir(f"{new_chats_dir_path}/{fn}")]
+    old_chat_dirs_helper = ChatDirsHelper(old_chats_dir_path)
+    new_chat_dirs_helper = ChatDirsHelper(new_chats_dir_path)
 
-    old_ids = set()
-    for fn in old_filenames:
-        record = parse_chatroom_dir_name(fn)
-        old_ids.add(record.id)
-
-    new_ids = set()
-    for fn in new_filenames:
-        record = parse_chatroom_dir_name(fn)
-        new_ids.add(record.id)
+    old_ids = set(old_chat_dirs_helper.list_all_chatroom_ids())
+    new_ids = set(new_chat_dirs_helper.list_all_chatroom_ids())
 
     diff_list = new_ids - old_ids
 
@@ -584,19 +580,18 @@ def classify_chat_images_by_compression_level_into_folders(chats_dir_path):
         logging.error(f"is not a directory: {chats_dir_path}")
         return
 
-    chat_dir_names = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
+    chat_dir_names = list(ChatDirsHelper.iter_chat_dir_names(chats_dir_path))
     for chat_dir_name in chat_dir_names:
         msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
 
         thumbnail_names = []
         original_image_names = []
-        for fn in os.listdir(msg_dir_path):
-            if os.path.isfile(f"{msg_dir_path}/{fn}"):
-                (filename_without_ext, sep, ext) = fn.rpartition(".")
-                if ext == "thumb":
-                    thumbnail_names.append(filename_without_ext)
-                elif ext == "original":
-                    original_image_names.append(filename_without_ext)
+        for _, fn in ChatMsgFileHelper.iter_files_in_dirs(chats_dir_path, chat_dir_name, in_dir_msg=True):
+            (filename_without_ext, sep, ext) = fn.rpartition(".")
+            if ext == "thumb":
+                thumbnail_names.append(filename_without_ext)
+            elif ext == "original":
+                original_image_names.append(filename_without_ext)
 
         logging.debug(f"thumbnail amount= {len(thumbnail_names)}"
                       f", original_images amount= {len(original_image_names)}"
@@ -684,7 +679,7 @@ def correct_chat_file_extensions(chats_dir_path):
         logging.error(f"is not a directory: {chats_dir_path}")
         return
 
-    chat_dir_names = [fn for fn in os.listdir(chats_dir_path) if os.path.isdir(f"{chats_dir_path}/{fn}")]
+    chat_dir_names = list(ChatDirsHelper.iter_chat_dir_names(chats_dir_path))
     for chat_dir_name in chat_dir_names:
         msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
         thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
@@ -701,30 +696,27 @@ def know_message_ids(chats_dir_path, msg_ids_dir_path, chatroom_ids_to_know_msg_
     if not os.path.isdir(msg_ids_dir_path):
         os.mkdir(msg_ids_dir_path)
 
-    existed_chatrooms = {}
-    for fn in os.listdir(chats_dir_path):
-        if not os.path.isdir(f"{chats_dir_path}/{fn}"):
-            continue
-        record = parse_chatroom_dir_name(fn)
-        existed_chatrooms[record.id] = fn
+    existed_chatrooms_helper = ChatDirsHelper(chats_dir_path)
 
     if len(chatroom_ids_to_know_msg_ids) == 0:
-        chatroom_ids_to_know_msg_ids = existed_chatrooms.keys()
+        chatroom_ids_to_know_msg_ids = existed_chatrooms_helper.list_all_chatroom_ids()
 
     logging.debug(f"chatroom_ids_to_know_msg_ids amount= {len(chatroom_ids_to_know_msg_ids)}"
                   f"\n  {chatroom_ids_to_know_msg_ids}")
     for chatroom_id in chatroom_ids_to_know_msg_ids:
-        chat_dir_name = existed_chatrooms.get(chatroom_id)
+        chat_dir_name = existed_chatrooms_helper.get_chat_dir_name_by_id(chatroom_id)
         if chat_dir_name is None:
             continue
 
-        msg_dir_path = gen_chat_msg_dir_path(chats_dir_path, chat_dir_name)
-        thumbnail_dir_path = gen_chat_msg_thumbnail_dir_path(msg_dir_path)
-        image_dir_path = gen_chat_msg_image_dir_path(msg_dir_path)
+        thumbnail_msg_ids = set()
+        for thumbnail_dir_path, fn in ChatMsgFileHelper.iter_files_in_dirs(chats_dir_path, chat_dir_name,
+                                                                           in_dir_thumbnails=True):
+            thumbnail_msg_ids.add(get_chat_msg_id_from_chat_msg_thumbnail_name(fn))
 
-        thumbnail_msg_ids = set(
-            (get_chat_msg_id_from_chat_msg_thumbnail_name(fn) for fn in os.listdir(thumbnail_dir_path)))
-        image_msg_ids = set((get_chat_msg_id_from_chat_msg_image_name(fn) for fn in os.listdir(image_dir_path)))
+        image_msg_ids = set((get_chat_msg_id_from_chat_msg_image_name(fn)
+                             for _, fn in ChatMsgFileHelper.iter_files_in_dirs(chats_dir_path, chat_dir_name,
+                                                                               in_dir_images=True)))
+
         approximately_msg_ids = thumbnail_msg_ids - image_msg_ids
 
         if len(approximately_msg_ids) == 0:
